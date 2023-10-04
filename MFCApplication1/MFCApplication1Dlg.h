@@ -14,6 +14,7 @@
 #include <dlib/opencv/cv_image.h>
 #include <dlib/geometry.h>
 #include <iostream>
+
 //#pragma comment(linker, "/entry:wWinMainCRTStartup /subsystem:console")
 using namespace cv;
 
@@ -46,6 +47,8 @@ protected:
 	afx_msg HCURSOR OnQueryDragIcon();
 	DECLARE_MESSAGE_MAP()
 public:
+	void* serial;
+	char hwbuf[10][1602];
 	CStatic pic;
 	afx_msg void OnDestroy();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
@@ -77,4 +80,6 @@ public:
 //	afx_msg void OnChar(UINT nChar, UINT nRepCnt, UINT nFlags);
 	virtual BOOL PreTranslateMessage(MSG* pMsg);
 	afx_msg void OnClickedReset();
+//	afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
+	afx_msg void OnChar(UINT nChar, UINT nRepCnt, UINT nFlags);
 };

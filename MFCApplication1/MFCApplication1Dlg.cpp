@@ -17,6 +17,179 @@
 #endif
 
 // 응용 프로그램 정보에 사용되는 CAboutDlg 대화 상자입니다.
+class Serial
+{
+private:
+	//Serial comm handler
+	HANDLE hSerial;
+	//Connection status
+	bool connected;
+	//Get various information about the connection
+	COMSTAT status;
+	//Keep track of last error
+	DWORD errors;
+
+public:
+	//Initialize Serial communication with the given COM port
+	Serial(const wchar_t* portName);
+	//Close the connection
+	~Serial();
+	//Read data in a buffer, if nbChar is greater than the
+	//maximum number of bytes available, it will return only the
+	//bytes available. The function return -1 when nothing could
+	//be read, the number of bytes actually read.
+	int ReadData(char* buffer, unsigned int nbChar);
+	//Writes data from a buffer through the Serial connection
+	//return true on success.
+	bool WriteData(const char* buffer, unsigned int nbChar);
+	//Check if we are actually connected
+	bool IsConnected();
+
+
+};
+Serial::Serial(const wchar_t* portName)
+{
+	//We're not yet connected
+	this->connected = false;
+
+	//Try to connect to the given port throuh CreateFile
+	this->hSerial = CreateFileW(portName,
+		GENERIC_READ | GENERIC_WRITE,
+		0,
+		NULL,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL);
+
+	//Check if the connection was successfull
+	if (this->hSerial == INVALID_HANDLE_VALUE)
+	{
+		//If not success full display an Error
+		if (GetLastError() == ERROR_FILE_NOT_FOUND) {
+
+			//Print Error if neccessary
+			printf("ERROR: Handle was not attached. Reason: %s not available.\n", portName);
+
+		}
+		else
+		{
+			printf("ERROR!!!");
+		}
+	}
+	else
+	{
+		//If connected we try to set the comm parameters
+		DCB dcbSerialParams = { 0 };
+
+		//Try to get the current
+		if (!GetCommState(this->hSerial, &dcbSerialParams))
+		{
+			//If impossible, show an error
+			printf("failed to get current serial parameters!");
+		}
+		else
+		{
+			//Define serial connection parameters for the arduino board
+			dcbSerialParams.BaudRate = CBR_115200;
+			dcbSerialParams.ByteSize = 8;
+			dcbSerialParams.StopBits = ONESTOPBIT;
+			dcbSerialParams.Parity = NOPARITY;
+			//Setting the DTR to Control_Enable ensures that the Arduino is properly
+			//reset upon establishing a connection
+			dcbSerialParams.fDtrControl = DTR_CONTROL_ENABLE;
+
+			//Set the parameters and check for their proper application
+			if (!SetCommState(hSerial, &dcbSerialParams))
+			{
+				printf("ALERT: Could not set Serial Port parameters");
+			}
+			else
+			{
+				//If everything went fine we're connected
+				this->connected = true;
+				//Flush any remaining characters in the buffers 
+				PurgeComm(this->hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR);
+				//We wait 2s as the arduino board will be reseting
+				Sleep(2000);
+			}
+		}
+	}
+
+}
+
+Serial::~Serial()
+{
+	//Check if we are connected before trying to disconnect
+	if (this->connected)
+	{
+		//We're no longer connected
+		this->connected = false;
+		//Close the serial handler
+		CloseHandle(this->hSerial);
+	}
+}
+
+int Serial::ReadData(char* buffer, unsigned int nbChar)
+{
+	//Number of bytes we'll have read
+	DWORD bytesRead;
+	//Number of bytes we'll really ask to read
+	unsigned int toRead;
+
+	//Use the ClearCommError function to get status info on the Serial port
+	ClearCommError(this->hSerial, &this->errors, &this->status);
+
+	//Check if there is something to read
+	if (this->status.cbInQue > 0)
+	{
+		//If there is we check if there is enough data to read the required number
+		//of characters, if not we'll read only the available characters to prevent
+		//locking of the application.
+		if (this->status.cbInQue > nbChar)
+		{
+			toRead = nbChar;
+		}
+		else
+		{
+			toRead = this->status.cbInQue;
+		}
+
+		//Try to read the require number of chars, and return the number of read bytes on success
+		if (ReadFile(this->hSerial, buffer, toRead, &bytesRead, NULL))
+		{
+			return bytesRead;
+		}
+
+	}
+
+	//If nothing has been read, or that an error was detected return 0
+	return 0;
+
+}
+
+
+bool Serial::WriteData(const char* buffer, unsigned int nbChar)
+{
+	DWORD bytesSend;
+
+	//Try to write the buffer on the Serial port
+	if (!WriteFile(this->hSerial, (void*)buffer, nbChar, &bytesSend, 0))
+	{
+		//In case it don't work get comm error and return false
+		ClearCommError(this->hSerial, &this->errors, &this->status);
+
+		return false;
+	}
+	else
+		return true;
+}
+
+bool Serial::IsConnected()
+{
+	//Simply return the connection status
+	return this->connected;
+}
+
 
 class CAboutDlg : public CDialogEx
 {
@@ -35,7 +208,7 @@ protected:
 protected:
 	DECLARE_MESSAGE_MAP()
 public:
-	afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
+//	afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
 };
 
 CAboutDlg::CAboutDlg() : CDialogEx(IDD_ABOUTBOX)
@@ -48,7 +221,7 @@ void CAboutDlg::DoDataExchange(CDataExchange* pDX)
 }
 
 BEGIN_MESSAGE_MAP(CAboutDlg, CDialogEx)
-	ON_WM_KEYDOWN()
+//	ON_WM_KEYDOWN()
 END_MESSAGE_MAP()
 
 
@@ -76,6 +249,8 @@ BEGIN_MESSAGE_MAP(CMFCApplication1Dlg, CDialogEx)
 	ON_WM_TIMER()
 	ON_WM_CREATE()
 	ON_BN_CLICKED(IDC_reset, &CMFCApplication1Dlg::OnClickedReset)
+//	ON_WM_KEYDOWN()
+	ON_WM_CHAR()
 END_MESSAGE_MAP()
 
 
@@ -141,7 +316,18 @@ BOOL CMFCApplication1Dlg::OnInitDialog()
 	if (p5 == NULL) AfxMessageBox(L"Error-iothr2");
 	detector = get_frontal_face_detector();
 	deserialize("shape_predictor_68_face_landmarks.dat") >> sp;
-	
+	wchar_t buf[200];
+	for (int i = 0; i < 10; i++) {
+		wsprintf(buf, L"\\\\.\\COM%d", i + 1);
+		serial = new Serial(buf);
+		if (((Serial*)serial)->IsConnected()) {
+			printf("%d serial\n", i); break;
+		}
+		else {
+			delete serial;
+			serial = 0;
+		}
+	}
 	return TRUE;  // 포커스를 컨트롤에 설정하지 않으면 TRUE를 반환합니다.
 }
 
@@ -596,7 +782,7 @@ UINT CMFCApplication1Dlg::iothr(LPVOID x) {
 	char buf[12];
 	for (int i = 0; i < 12; i++) buf[i] = 0;
 	int nbuf = 0;
-	int lang = 2;
+	int lang = 1;
 	int olang = -1;
 	bool closed = false;
 	unsigned long long cnt = 0;
@@ -1305,6 +1491,11 @@ int CMFCApplication1Dlg::OnCreate(LPCREATESTRUCT lpCreateStruct)
 BOOL CMFCApplication1Dlg::PreTranslateMessage(MSG* pMsg)
 {
 	// TODO: 여기에 특수화된 코드를 추가 및/또는 기본 클래스를 호출합니다.
+	if (pMsg->message == WM_CHAR)
+	{
+		this->SendMessage(WM_CHAR, pMsg->wParam, pMsg->lParam);
+		return TRUE;
+	}
 	return CDialogEx::PreTranslateMessage(pMsg);
 }
 
@@ -1315,10 +1506,23 @@ void CMFCApplication1Dlg::OnClickedReset()
 	if(reset<0) reset = 1;
 }
 
-
-void CAboutDlg::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
+void CMFCApplication1Dlg::OnChar(UINT nChar, UINT nRepCnt, UINT nFlags)
 {
 	// TODO: 여기에 메시지 처리기 코드를 추가 및/또는 기본값을 호출합니다.
-	//to hardware
-	CDialogEx::OnKeyDown(nChar, nRepCnt, nFlags);
+	static bool sem = false;
+	if ('0' <= (char)nChar && (char)nChar <= '9') {
+		((Serial*)serial)->WriteData("r", 1);
+		Sleep(1000);
+		((Serial*)serial)->ReadData(hwbuf[nChar-'0'], 1602);
+	}
+	else if ('a' <= (char)nChar&&(char)nChar<='j') {
+		if (sem == false) {
+			sem = true;
+			((Serial*)serial)->WriteData(hwbuf[nChar-'a'], 1602);
+			Sleep(1000);
+			sem = false;
+		}
+	}
+	CDialogEx::OnChar(nChar, nRepCnt, nFlags);
+	
 }
